@@ -4,6 +4,7 @@ import { INITIAL_SOLUTIONS } from '../data/mockSolutions';
 import { INITIAL_TEAMS } from '../data/mockTeams';
 import { INITIAL_UNIVERSITIES } from '../data/mockUniversities';
 import { INITIAL_INDUSTRIES } from '../data/mockIndustries';
+import { API } from '../services/api';
 
 const ProjectContext = createContext();
 
@@ -43,8 +44,56 @@ export const ProjectProvider = ({ children }) => {
     return INITIAL_TEAMS;
   });
 
-  const [universities] = useState(INITIAL_UNIVERSITIES);
-  const [industries] = useState(INITIAL_INDUSTRIES);
+  const [universities, setUniversities] = useState(INITIAL_UNIVERSITIES);
+  const [industries, setIndustries] = useState(INITIAL_INDUSTRIES);
+
+  // Sync Live Data from Backend on Mount
+  useEffect(() => {
+    async function fetchBackendEntities() {
+      // 1. Fetch Universities
+      try {
+        const uRes = await API.get('/universities?limit=20');
+        if (uRes.success && Array.isArray(uRes.data) && uRes.data.length > 0) {
+          setUniversities(uRes.data);
+        }
+      } catch (e) {}
+
+      // 2. Fetch Industry Partners
+      try {
+        const iRes = await API.get('/industry?limit=20');
+        if (iRes.success && Array.isArray(iRes.data) && iRes.data.length > 0) {
+          setIndustries(iRes.data);
+        }
+      } catch (e) {}
+
+      // 3. Fetch Solutions
+      try {
+        const sRes = await API.get('/solutions?limit=20');
+        if (sRes.success && Array.isArray(sRes.data) && sRes.data.length > 0) {
+          const mapped = sRes.data.map(s => ({
+            id: s._id,
+            title: s.title,
+            challengeId: s.challenge?._id || s.challenge,
+            challengeTitle: s.challenge?.title || 'Jharkhand Societal Challenge',
+            category: s.challenge?.category || 'Water Management',
+            district: s.challenge?.district || 'Ranchi',
+            teamName: s.team?.name || 'Student Innovation Team',
+            university: s.university || s.submittedBy?.university || 'University in Jharkhand',
+            leadName: s.submittedBy?.name || 'Student Innovator',
+            technologies: s.proposedTechnology || ['IoT', 'Embedded Hardware'],
+            expectedImpact: s.expectedImpact || '',
+            estimatedDuration: s.estimatedDuration || '4 Months',
+            status: s.status === 'approved' ? 'Approved for Pilot' : s.status === 'shortlisted' ? 'Shortlisted' : 'Proposed & Under Review',
+            industrySupportRequirement: s.requiredResources || 'Prototyping mentorship & grant assistance.',
+            description: s.description || '',
+            submissionDate: s.createdAt ? new Date(s.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+          }));
+          setSolutions(mapped);
+        }
+      } catch (e) {}
+    }
+    fetchBackendEntities();
+  }, []);
 
   useEffect(() => {
     try {
@@ -64,7 +113,7 @@ export const ProjectProvider = ({ children }) => {
     } catch (e) {}
   }, [teams]);
 
-  const submitProposal = (formData, user) => {
+  const submitProposal = async (formData, user) => {
     const newSolution = {
       id: `SOL-JH-2026-${Math.floor(100 + Math.random() * 900)}`,
       title: formData.title,
@@ -84,11 +133,29 @@ export const ProjectProvider = ({ children }) => {
       submissionDate: new Date().toISOString().split('T')[0]
     };
 
+    if (formData.challengeId && formData.challengeId.length === 24) {
+      try {
+        await API.post('/solutions', {
+          title: formData.title,
+          challenge: formData.challengeId,
+          description: formData.description || formData.overview || '',
+          university: formData.university || user?.institution || '',
+          proposedTechnology: newSolution.technologies,
+          implementationPlan: formData.implementationPlan || formData.overview || 'Standard milestone plan',
+          expectedImpact: formData.expectedImpact || 'Societal impact in Jharkhand',
+          estimatedDuration: formData.duration || '4 months',
+          industrySupportRequired: true
+        });
+      } catch (err) {
+        console.warn('[ProjectContext] Backend solution submit failed, saved locally:', err.message);
+      }
+    }
+
     setSolutions(prev => [newSolution, ...prev]);
     return newSolution;
   };
 
-  const createTeam = (teamData, user) => {
+  const createTeam = async (teamData, user) => {
     const newTeam = {
       id: `team-${Date.now()}`,
       name: teamData.name,
@@ -110,6 +177,14 @@ export const ProjectProvider = ({ children }) => {
         }
       ]
     };
+
+    try {
+      await API.post('/teams', {
+        name: teamData.name,
+        university: newTeam.university,
+        skills: newTeam.skills
+      });
+    } catch (e) {}
 
     setTeams(prev => [newTeam, ...prev]);
     return newTeam;
@@ -145,7 +220,7 @@ export const ProjectProvider = ({ children }) => {
     }));
   };
 
-  const addProjectUpdate = (projectId, content, user) => {
+  const addProjectUpdate = async (projectId, content, user) => {
     const newUpdate = {
       id: `u-${Date.now()}`,
       author: user?.name || 'Project Contributor',
@@ -162,6 +237,15 @@ export const ProjectProvider = ({ children }) => {
       }
       return p;
     }));
+
+    if (typeof projectId === 'string' && projectId.length === 24) {
+      try {
+        await API.post(`/projects/${projectId}/updates`, {
+          title: 'Project Status Update',
+          description: content
+        });
+      } catch (e) {}
+    }
   };
 
   return (

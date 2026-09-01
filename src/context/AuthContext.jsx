@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API } from '../services/api';
 
 const AuthContext = createContext();
 
@@ -11,14 +12,25 @@ export const USER_ROLES = {
   ADMIN: 'Platform Administrator'
 };
 
+// Role mapping from frontend UI strings to backend lowercase enums
+export const ROLE_MAP = {
+  [USER_ROLES.CITIZEN]: 'citizen',
+  [USER_ROLES.STUDENT]: 'student',
+  [USER_ROLES.UNIVERSITY]: 'university',
+  [USER_ROLES.INDUSTRY]: 'industry',
+  [USER_ROLES.GOVERNMENT]: 'government',
+  [USER_ROLES.ADMIN]: 'admin',
+};
+
 export const DEMO_USERS = {
   [USER_ROLES.CITIZEN]: {
     id: 'user-cit-01',
-    name: 'Sunita Soren',
-    email: 'sunita.soren@jharkhandmail.in',
+    name: 'Ramesh Mahto',
+    email: 'citizen@example.com',
     role: USER_ROLES.CITIZEN,
+    backendRole: 'citizen',
     district: 'Ranchi',
-    location: 'Angara Block, Rural Ranchi',
+    location: 'Ranchi, Jharkhand',
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
     title: 'Gram Pradhan & Social Worker',
     submittedProblemsCount: 3,
@@ -26,23 +38,25 @@ export const DEMO_USERS = {
   },
   [USER_ROLES.STUDENT]: {
     id: 'user-stu-01',
-    name: 'Aarav Sharma',
-    email: 'aarav.sharma@bitmesra.ac.in',
+    name: 'Rahul Kumar',
+    email: 'student@example.com',
     role: USER_ROLES.STUDENT,
+    backendRole: 'student',
     district: 'Ranchi',
     institution: 'Birla Institute of Technology (BIT) Mesra',
     department: 'Chemical Engineering (4th Year)',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
     title: 'Student Innovator & Team Lead',
-    team: 'Team JalRakshak',
+    team: 'BIT Jal Suraksha Innovators',
     activeProjectsCount: 2,
     proposalsSubmittedCount: 4
   },
   [USER_ROLES.UNIVERSITY]: {
     id: 'user-uni-01',
-    name: 'Prof. Alok Mukherjee',
-    email: 'dean.innovation@bitmesra.ac.in',
+    name: 'Prof. Amit Verma',
+    email: 'university@example.com',
     role: USER_ROLES.UNIVERSITY,
+    backendRole: 'university',
     district: 'Ranchi',
     institution: 'Birla Institute of Technology (BIT) Mesra',
     department: 'Dean of Research & Incubation',
@@ -53,11 +67,12 @@ export const DEMO_USERS = {
   },
   [USER_ROLES.INDUSTRY]: {
     id: 'user-ind-01',
-    name: 'Dr. Vivek Sengupta',
-    email: 'vivek.sengupta@tatasteel.com',
+    name: 'Rajesh Agarwal',
+    email: 'industry@example.com',
     role: USER_ROLES.INDUSTRY,
+    backendRole: 'industry',
     district: 'East Singhbhum (Jamshedpur)',
-    company: 'Tata Steel Foundation & CSR',
+    company: 'Tata Steel Limited',
     designation: 'Chief Sustainability Officer',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
     title: 'Industry Mentor & CSR Grant Evaluator',
@@ -66,9 +81,10 @@ export const DEMO_USERS = {
   },
   [USER_ROLES.GOVERNMENT]: {
     id: 'user-gov-01',
-    name: 'Shri Rajesh K. Mishra',
-    email: 'rkmishra.ias@jharkhand.gov.in',
+    name: 'Anil Kumar Jha',
+    email: 'government@example.com',
     role: USER_ROLES.GOVERNMENT,
+    backendRole: 'government',
     district: 'Ranchi',
     department: 'Dept of Drinking Water & Sanitation / IT Secretary',
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
@@ -78,9 +94,10 @@ export const DEMO_USERS = {
   },
   [USER_ROLES.ADMIN]: {
     id: 'user-adm-01',
-    name: 'Dr. Sanjay Kumar Toppo',
-    email: 'admin@samadhanconnect.gov.in',
+    name: 'Samadhan Admin',
+    email: 'admin@example.com',
     role: USER_ROLES.ADMIN,
+    backendRole: 'admin',
     district: 'Ranchi',
     department: 'State Innovation Mission Jharkhand',
     avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80',
@@ -105,6 +122,38 @@ export const AuthProvider = ({ children }) => {
 
   const [isAuthenticated, setIsAuthenticated] = useState(true);
 
+  // Sync with Backend /api/auth/me on mount if token exists
+  useEffect(() => {
+    async function verifyBackendSession() {
+      const token = localStorage.getItem('samadhan_jwt');
+      if (token && !token.startsWith('mock_token_')) {
+        try {
+          const res = await API.get('/auth/me');
+          if (res.success && res.data) {
+            const u = res.data;
+            const uiRole = Object.keys(ROLE_MAP).find(k => ROLE_MAP[k] === u.role) || USER_ROLES.CITIZEN;
+            setCurrentUser({
+              id: u._id,
+              name: u.name,
+              email: u.email,
+              role: uiRole,
+              backendRole: u.role,
+              district: u.location ? u.location.split(',')[0] : 'Ranchi',
+              avatar: u.profileImage || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+              institution: u.university || '',
+              company: u.organization || '',
+              bio: u.bio || ''
+            });
+            setIsAuthenticated(true);
+          }
+        } catch (e) {
+          console.log('[Auth] Backend sync idle or using local state');
+        }
+      }
+    }
+    verifyBackendSession();
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem('samadhan_v2_user', JSON.stringify(currentUser));
@@ -113,15 +162,61 @@ export const AuthProvider = ({ children }) => {
     }
   }, [currentUser]);
 
-  const switchPersona = (roleName) => {
-    if (DEMO_USERS[roleName]) {
-      setCurrentUser(DEMO_USERS[roleName]);
+  const switchPersona = async (roleName) => {
+    const demo = DEMO_USERS[roleName];
+    if (demo) {
+      setCurrentUser(demo);
       setIsAuthenticated(true);
+
+      // Attempt live login with demo credentials
+      try {
+        const res = await API.post('/auth/login', {
+          email: demo.email,
+          password: 'password123'
+        });
+        if (res.success && res.token) {
+          localStorage.setItem('samadhan_jwt', res.token);
+          return;
+        }
+      } catch (err) {
+        // Fallback to offline demo mode
+      }
       localStorage.setItem('samadhan_jwt', `mock_token_${Date.now()}`);
     }
   };
 
-  const login = (email, password, role) => {
+  const login = async (email, password, role) => {
+    try {
+      const res = await API.post('/auth/login', {
+        email: email.trim().toLowerCase(),
+        password
+      });
+
+      if (res.success && res.user) {
+        const u = res.user;
+        const uiRole = Object.keys(ROLE_MAP).find(k => ROLE_MAP[k] === u.role) || USER_ROLES.CITIZEN;
+        const userObj = {
+          id: u._id,
+          name: u.name,
+          email: u.email,
+          role: uiRole,
+          backendRole: u.role,
+          district: u.location ? u.location.split(',')[0] : 'Ranchi',
+          avatar: u.profileImage || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          institution: u.university || '',
+          company: u.organization || '',
+          bio: u.bio || ''
+        };
+        setCurrentUser(userObj);
+        setIsAuthenticated(true);
+        localStorage.setItem('samadhan_jwt', res.token);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[Auth] Live API login error, fallback to demo user:', err.message);
+    }
+
+    // Fallback if backend offline
     const matchedUser = Object.values(DEMO_USERS).find(u => u.role === role) || DEMO_USERS[USER_ROLES.CITIZEN];
     const userToSet = {
       ...matchedUser,
@@ -133,7 +228,41 @@ export const AuthProvider = ({ children }) => {
     return true;
   };
 
-  const register = (userData) => {
+  const register = async (userData) => {
+    try {
+      const backendRole = ROLE_MAP[userData.role] || 'citizen';
+      const res = await API.post('/auth/register', {
+        name: userData.name,
+        email: userData.email,
+        password: userData.password || 'password123',
+        role: backendRole,
+        university: userData.institution || userData.university || '',
+        organization: userData.company || userData.organization || '',
+        location: userData.district ? `${userData.district}, Jharkhand` : 'Ranchi, Jharkhand'
+      });
+
+      if (res.success && res.user) {
+        const u = res.user;
+        const uiRole = Object.keys(ROLE_MAP).find(k => ROLE_MAP[k] === u.role) || USER_ROLES.CITIZEN;
+        const userObj = {
+          id: u._id,
+          name: u.name,
+          email: u.email,
+          role: uiRole,
+          backendRole: u.role,
+          district: userData.district || 'Ranchi',
+          avatar: u.profileImage || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          ...userData
+        };
+        setCurrentUser(userObj);
+        setIsAuthenticated(true);
+        localStorage.setItem('samadhan_jwt', res.token);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[Auth] Live API register error, fallback to local state:', err.message);
+    }
+
     const newUser = {
       id: `user-${Date.now()}`,
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
